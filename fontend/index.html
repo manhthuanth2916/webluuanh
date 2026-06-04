@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloudify - Ứng Dụng Lưu Trữ Ảnh Cao Cấp</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <style>
+    /* --- CSS NỀN TẢNG VÀ GIAO DIỆN LỘNG LẪY --- */
+    :root {
+      --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      --btn-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      --btn-danger-gradient: linear-gradient(135deg, #f5576c 0%, #f0810f 100%);
+      --glass-bg: rgba(255, 255, 255, 0.1);
+      --glass-border: rgba(255, 255, 255, 0.2);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background: var(--primary-gradient);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 30px 20px;
+      color: #fff;
+      overflow-x: hidden;
+    }
+
+    /* Vòng tròn trang trí mờ ảo phía sau */
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      filter: blur(50px);
+      z-index: -1;
+    }
+    body::before { top: 10%; left: 10%; }
+    body::after { bottom: 10%; right: 10%; }
+
+    .container {
+      width: 100%;
+      max-width: 850px;
+      animation: fadeIn 0.8s ease-in-out;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      text-align: center;
+      margin-bottom: 30px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      text-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+      background: linear-gradient(to right, #fff, #e0e0e0);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Hiệu ứng Kính Mờ (Glassmorphism) */
+    .card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      padding: 40px;
+      border-radius: 24px;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+      margin-bottom: 30px;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .card:hover {
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    h2, h3 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: #f1f1f1;
+      border-left: 4px solid #00f2fe;
+      padding-left: 12px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    /* Input cách điệu */
+    input[type="email"], input[type="password"] {
+      width: 100%;
+      padding: 14px 20px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      color: #fff;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      outline: none;
+    }
+
+    input[type="email"]:focus, input[type="password"]:focus {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: #00f2fe;
+      box-shadow: 0 0 15px rgba(0, 242, 254, 0.4);
+    }
+
+    input::placeholder {
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    /* Cụm Nút Bấm Đẳng Cấp */
+    .btn-group {
+      display: flex;
+      gap: 15px;
+      margin-top: 10px;
+    }
+
+    button {
+      flex: 1;
+      background: var(--btn-gradient);
+      color: #111;
+      font-weight: 700;
+      border: none;
+      padding: 14px 20px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(0, 242, 254, 0.3);
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 242, 254, 0.5);
+      filter: brightness(1.1);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.15);
+      color: #fff;
+      border: 1px solid var(--glass-border);
+      box-shadow: none;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.25);
+      box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-danger {
+      background: var(--btn-danger-gradient);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(245, 87, 108, 0.3);
+    }
+
+    .btn-danger:hover {
+      box-shadow: 0 6px 20px rgba(245, 87, 108, 0.5);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Header thông tin người dùng */
+    .user-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 15px 20px;
+      border-radius: 14px;
+      margin-bottom: 25px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    #user-email {
+      font-weight: 500;
+      color: #e0e0e0;
+    }
+
+    /* Custom Input File */
+    .upload-box {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 20px;
+      border-radius: 16px;
+      border: 2px dashed rgba(255, 255, 255, 0.2);
+    }
+
+    input[type="file"] {
+      color: #fff;
+    }
+
+    input[type="file"]::-webkit-file-upload-button {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      color: #fff;
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    input[type="file"]::-webkit-file-upload-button:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    hr {
+      border: 0;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.15);
+      margin: 30px 0;
+    }
+
+    /* Lưới Gallery Ảnh Nghệ Thuật */
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .gallery-item {
+      position: relative;
+      height: 200px;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+
+    .gallery-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.5s ease;
+    }
+
+    .gallery-item:hover {
+      transform: scale(1.05) translateY(-5px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+      border-color: #00f2fe;
+    }
+
+    .gallery-item:hover img {
+      transform: scale(1.1);
+    }
+
+    .status-text {
+      text-align: center;
+      color: rgba(255, 255, 255, 0.6);
+      font-style: italic;
+      grid-column: 1 / -1;
+      padding: 20px;
+    }
+
+    /* Hiệu ứng mượt */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>Cloudify Storage</h1>
+
+    <div id="auth-section" class="card">
+      <h2>Xác thực tài khoản</h2>
+      <div class="form-group" style="margin-top: 15px;">
+        <input type="email" id="email" placeholder="Nhập địa chỉ Email">
+      </div>
+      <div class="form-group">
+        <input type="password" id="password" placeholder="Nhập mật khẩu">
+      </div>
+      <div class="btn-group">
+        <button id="btn-login">Đăng Nhập</button>
+        <button id="btn-register" class="btn-secondary">Đăng Ký Mới</button>
+      </div>
+    </div>
+
+    <div id="main-section" class="card hidden">
+      <div class="user-info">
+        <span id="user-email">Đang tải...</span>
+        <button id="btn-logout" class="btn-danger" style="flex: none; padding: 8px 16px; font-size: 0.9rem;">Đăng xuất</button>
+      </div>
+
+      <h3>Tải ảnh lên đám mây</h3>
+      <form id="upload-form" class="upload-box" style="margin-top: 15px;">
+        <input type="file" id="image-input" accept="image/*" required style="flex: 1;">
+        <button type="submit" id="btn-upload" style="flex: none;">Tải Lên</button>
+      </form>
+
+      <hr>
+
+      <h3>Kho lưu trữ cá nhân</h3>
+      <div id="gallery" class="gallery">
+        <p class="status-text">Đang tải bộ sưu tập ảnh cá nhân của bạn...</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // CẤU HÌNH THÔNG TIN (Thay thế bằng thông tin chính xác của bạn)
+    const SUPABASE_URL = "ĐIỀN_URL_SUPABASE_CỦA_BẠN";
+    const SUPABASE_ANON_KEY = "ĐIỀN_ANON_KEY_SUPABASE_CỦA_BẠN";
+    const BACKEND_API_URL = "ĐIỀN_URL_API_RENDER_BẠN_VỪA_DEPLOY"; // ví dụ: https://photo-storage-api.onrender.com
+
+    // Khởi tạo Supabase Client
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Dom Elements
+    const authSection = document.getElementById('auth-section');
+    const mainSection = document.getElementById('main-section');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const userEmailSpan = document.getElementById('user-email');
+    const gallery = document.getElementById('gallery');
+    const uploadForm = document.getElementById('upload-form');
+
+    // Kiểm tra trạng thái đăng nhập ban đầu
+    window.addEventListener('DOMContentLoaded', async () => {
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      handleAuthStateChange(session);
+    });
+
+    function handleAuthStateChange(session) {
+      if (session) {
+        authSection.classList.add('hidden');
+        mainSection.classList.remove('hidden');
+        userEmailSpan.innerText = `Tài khoản: ${session.user.email}`;
+        localStorage.setItem('access_token', session.access_token);
+        loadImages();
+      } else {
+        authSection.classList.remove('hidden');
+        mainSection.classList.add('hidden');
+        localStorage.removeItem('access_token');
+      }
+    }
+
+    // Đăng ký tài khoản
+    document.getElementById('btn-register').addEventListener('click', async () => {
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+      if (!email || !password) return alert('Vui lòng điền đầy đủ email và mật khẩu!');
+
+      const { error } = await supabaseClient.auth.signUp({ email, password });
+      if (error) alert('Lỗi: ' + error.message);
+      else alert('Đăng ký tài khoản thành công! Bạn có thể thực hiện đăng nhập.');
+    });
+
+    // Đăng nhập
+    document.getElementById('btn-login').addEventListener('click', async () => {
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+      if (!email || !password) return alert('Vui lòng nhập đầy đủ thông tin đăng nhập!');
+
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) alert('Đăng nhập thất bại: ' + error.message);
+      else handleAuthStateChange(data.session);
+    });
+
+    // Đăng xuất
+    document.getElementById('btn-logout').addEventListener('click', async () => {
+      await supabaseClient.auth.signOut();
+      handleAuthStateChange(null);
+    });
+
+    // Gọi API Nodejs (Render) lấy danh sách ảnh
+    async function loadImages() {
+      gallery.innerHTML = '<p class="status-text">Đang đồng bộ hóa dữ liệu hình ảnh...</p>';
+      const token = localStorage.getItem('access_token');
+
+      try {
+        const response = await fetch(`${BACKEND_API_URL}/api/images`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+          if (data.length === 0) {
+            gallery.innerHTML = '<p class="status-text">Kho lưu trữ trống. Hãy tải lên tấm hình đầu tiên!</p>';
+            return;
+          }
+          gallery.innerHTML = '';
+          data.forEach(img => {
+            const div = document.createElement('div');
+            div.className = 'gallery-item';
+            
+            const imgTag = document.createElement('img');
+            imgTag.src = img.image_url;
+            imgTag.alt = 'Cloud Photo';
+            imgTag.loading = 'lazy'; // Tối ưu tải chậm mượt mà
+            
+            div.appendChild(imgTag);
+            gallery.appendChild(div);
+          });
+        } else {
+          gallery.innerHTML = `<p class="status-text" style="color:#ff7675;">Lỗi hệ thống: ${data.error}</p>`;
+        }
+      } catch (err) {
+        gallery.innerHTML = '<p class="status-text" style="color:#ff7675;">Không kết nối được tới máy chủ API Render.</p>';
+      }
+    }
+
+    // Tải ảnh lên API Nodejs (Render)
+    uploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fileInput = document.getElementById('image-input');
+      const file = fileInput.files[0];
+      if (!file) return;
+
+      const token = localStorage.getItem('access_token');
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const btnUpload = document.getElementById('btn-upload');
+      btnUpload.innerText = 'Đang xử lý...';
+      btnUpload.disabled = true;
+
+      try {
+        const response = await fetch(`${BACKEND_API_URL}/api/upload`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        });
+        const result = await response.json();
+
+        if (response.ok) {
+          alert('Tuyệt vời! Ảnh đã lưu trữ thành công.');
+          fileInput.value = '';
+          loadImages();
+        } else {
+          alert('Lỗi: ' + result.error);
+        }
+      } catch (err) {
+        alert('Lỗi đường truyền dữ liệu tới máy chủ.');
+      } finally {
+        btnUpload.innerText = 'Tải Lên';
+        btnUpload.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
