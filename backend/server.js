@@ -1,87 +1,95 @@
 const express = require('express');
-const cors = require('cors');
+const cors = require('cors'); // 1. Đảm bảo đã require thư viện CORS
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const app = express();
 
-// Cấu hình Middleware
-app.use(cors());
+// 2. CẤU HÌNH CORS CHUẨN (Cho phép tất cả các nguồn gọi vào API)
+app.use(cors({
+    origin: '*', 
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
-// Khởi tạo kết nối Supabase
+// Khởi tạo Supabase Client
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
-// Cấu hình Multer để lưu file tạm vào bộ nhớ (Memory Storage)
-const upload = multer({ storage: multer.memoryStorage() });
+// Cấu hình Multer lưu file tạm trong bộ nhớ
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
-// --- CÁC ĐƯỜNG DẪN API ---
+// ==========================================
+// ĐỊNH NGHĨA CÁC ĐƯỜNG DẪN API (ROUTERS)
+// ==========================================
 
-// 1. API Upload ảnh lên hệ thống
-app.post('/api/upload', upload.single('image'), async (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  const file = req.file;
+// Hàm trung gian kiểm tra Token (Middleware)
+async function checkAuth(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'Thiếu token xác thực' });
 
-  if (!token || !file) {
-    return res.status(400).json({ error: 'Thiếu Token xác thực hoặc File ảnh.' });
-  }
+    const token = authHeader.split(' ')[1];
+    const { data: { user }, error } = await supabase.auth.getUser(token);
 
-  // Xác thực user dựa trên token gửi từ Frontend gửi lên
-  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-  if (authErr || !user) {
-    return res.status(401).json({ error: 'Tài khoản không hợp lệ hoặc hết phiên đăng nhập.' });
-  }
+    if (error || !user) return res.status(401).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });
+    req.user = user;
+    next();
+}
 
-  // Đặt tên file duy nhất trong storage: user_id/thời_gian_tên_file
-  const fileName = `${user.id}/${Date.now()}_${file.originalname}`;
+// LỖI 404 NẰM Ở ĐÂY: Đảm bảo đường dẫn là '/api/images' viết thường, có chữ 's'
+app.get('/api/images', checkAuth, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('images')
+            .select('*')
+            .eq('user_id', req.user.id)
+            .order('created_at', { ascending: false });
 
-  // Upload file ảnh vật lý vào Supabase Storage bucket 'photos'
-  const { data: storageData, error: storageErr } = await supabase.storage
-    .from('photos')
-    .upload(fileName, file.buffer, { contentType: file.mimetype });
-
-  if (storageErr) {
-    return res.status(500).json({ error: storageErr.message });
-  }
-
-  // Lấy đường link public URL của ảnh vừa upload
-  const { data: { publicUrl } } = supabase.storage.from('photos').getPublicUrl(fileName);
-
-  // Lưu thông tin URL và ID người sở hữu vào bảng dữ liệu 'images'
-  const { data: dbData, error: dbErr } = await supabase
-    .from('images')
-    .insert([{ user_id: user.id, image_url: publicUrl }])
-    .select();
-
-  if (dbErr) {
-    return res.status(500).json({ error: dbErr.message });
-  }
-
-  res.json({ message: 'Upload thành công!', data: dbData[0] });
+        if (error) throw error;
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// 2. API Lấy danh sách ảnh của cơ sở dữ liệu dựa theo User đăng nhập
-app.get('/api/images', async (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Không tìm thấy mã xác thực.' });
+// Đường dẫn upload ảnh
+app.post('/api/upload', checkAuth, upload.single('image'), async (req, res) => {
+    try {
+        const file = req.file;
+        if (!file) return res.status(400).json({ error: 'Vui lòng chọn file ảnh để tải lên' });
 
-  // Xác thực xem token này thuộc về user nào
-  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-  if (authErr || !user) return res.status(401).json({ error: 'Không có quyền truy cập.' });
+        const fileName = `${req.user.id}/${Date.now()}-${file.originalname}`;
 
-  // Truy vấn danh sách các ảnh mà user đó đã tải lên
-  const { data, error } = await supabase
-    .from('images')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false });
+        // Upload trực tiếp lên Supabase Storage Bucket
+        const { data: storageData, error: storageErr } = await supabase.storage
+            .from('photos') // Tên bucket trên Supabase phải trùng khớp hoàn toàn
+            .upload(fileName, file.buffer, { contentType: file.mimetype });
 
-  if (error) return res.status(500).json({ error: error.message });
+        if (storageErr) throw storageErr;
 
-  res.json(data);
+        // Lấy URL công khai của ảnh vừa upload
+        const { data: { publicUrl } } = supabase.storage
+            .from('photos')
+            .getPublicUrl(fileName);
+
+        // Lưu thông tin ảnh vào bảng 'images' trong Database
+        const { data, error: dbErr } = await supabase
+            .from('images')
+            .insert([{ user_id: req.user.id, image_url: publicUrl }])
+            .select();
+
+        if (dbErr) throw dbErr;
+        res.json(data[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// Chạy server API
+// Kiểm tra cổng chạy server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server đang chạy tại port ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`Server đang chạy tại port ${PORT}`);
+});
