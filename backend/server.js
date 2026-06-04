@@ -22,21 +22,29 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANO
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// ==========================================
-// ĐỊNH NGHĨA CÁC ĐƯỜNG DẪN API (ROUTERS)
-// ==========================================
-
-// Hàm trung gian kiểm tra Token (Middleware)
+// Thay thế hàm checkAuth cũ bằng đoạn này:
 async function checkAuth(req, res, next) {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'Thiếu token xác thực' });
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader) return res.status(401).json({ error: 'Thiếu token xác thực' });
 
-    const token = authHeader.split(' ')[1];
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+        const token = authHeader.split(' ')[1];
+        
+        // Gọi API Supabase lấy thông tin user từ token gửi lên
+        const { data: { user }, error } = await supabase.auth.getUser(token);
 
-    if (error || !user) return res.status(401).json({ error: 'Token không hợp lệ hoặc đã hết hạn' });
-    req.user = user;
-    next();
+        // Nếu lỗi auth từ Supabase, in ra log để kiểm tra và chặn lại
+        if (error || !user) {
+            console.error("Lỗi xác thực Supabase Auth:", error);
+            return res.status(401).json({ error: 'Phiên đăng nhập hết hạn, vui lòng đăng nhập lại' });
+        }
+
+        req.user = user; // Gắn thông tin user vào request
+        next();
+    } catch (err) {
+        console.error("Lỗi hệ thống tại checkAuth:", err);
+        res.status(500).json({ error: "Lỗi xác thực hệ thống" });
+    }
 }
 
 // LỖI 404 NẰM Ở ĐÂY: Đảm bảo đường dẫn là '/api/images' viết thường, có chữ 's'
